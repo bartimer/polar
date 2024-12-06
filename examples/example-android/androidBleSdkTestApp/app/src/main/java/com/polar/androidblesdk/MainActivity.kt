@@ -20,11 +20,15 @@ import com.polar.sdk.api.PolarBleApiDefaultImpl
 import com.polar.sdk.api.PolarH10OfflineExerciseApi
 import com.polar.sdk.api.errors.PolarInvalidArgument
 import com.polar.sdk.api.model.*
+import com.polar.androidcommunications.api.ble.model.DisInfo;
+import com.polar.sdk.api.PolarBleApi.PolarDeviceDataType
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.core.Flowable
 import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.disposables.Disposable
+import java.time.Instant
 import java.util.*
+
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -34,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ATTENTION! Replace with the device ID from your device.
-    private var deviceId = "BC15022D"
+    private var deviceId = "E330BA27"
 
     private val api: PolarBleApi by lazy {
         // Notice all features are enabled
@@ -106,6 +110,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var stopRecordingButton: Button
     private lateinit var downloadRecordingButton: Button
     private lateinit var deleteRecordingButton: Button
+    private lateinit var offlineSettingsButton: Button
+    private lateinit var restartButton: Button
     private val entryCache: MutableMap<String, MutableList<PolarOfflineRecordingEntry>> = mutableMapOf()
 
 
@@ -137,7 +143,8 @@ class MainActivity : AppCompatActivity() {
         changeSdkModeLedAnimationStatusButton = findViewById(R.id.change_sdk_mode_led_animation_status)
         changePpiModeLedAnimationStatusButton = findViewById(R.id.change_ppi_mode_led_animation_status)
         doFactoryResetButton = findViewById(R.id.do_factory_reset)
-
+        offlineSettingsButton = findViewById(R.id.offline_settings_button2)
+        restartButton = findViewById(R.id.restart_button)
         //Verity Sense recording buttons
         listRecordingsButton = findViewById(R.id.list_recordings)
         startRecordingButton = findViewById(R.id.start_recording)
@@ -190,6 +197,10 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "DIS INFO uuid: $uuid value: $value")
             }
 
+            override fun disInformationReceived(identifier: String, disInfo: DisInfo){
+
+            }
+
             override fun batteryLevelReceived(identifier: String, level: Int) {
                 Log.d(TAG, "BATTERY LEVEL: $level")
             }
@@ -235,6 +246,37 @@ class MainActivity : AppCompatActivity() {
                 }
                 Log.e(TAG, "Failed to $attempt. Reason $polarInvalidArgument ")
             }
+        }
+        restartButton.setOnClickListener{
+            Log.d(TAG,"restarting device")
+            api.doRestart(deviceId)
+        }
+        offlineSettingsButton.setOnClickListener{
+            Log.d(TAG,"get offline settings")
+            api.requestFullOfflineRecordingSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
+                .subscribe(
+                    { polarSensorSettings: PolarSensorSetting ->
+                        Log.d(TAG, " settings: ${polarSensorSettings.toString()}")
+                    },
+                    { error: Throwable ->
+                        Log.e(TAG, "requestFullOfflineRecordingSettings. Reason $error")
+                    }
+                )
+            api.getAvailableOfflineRecordingDataTypes(deviceId).subscribe(
+                { deviceTypes: Set<PolarDeviceDataType> ->
+                    Log.d(TAG, " settings: ${deviceTypes.toString()}")
+            },{ error: Throwable ->
+                    Log.e(TAG, "requestFullOfflineRecordingSettings. Reason $error")
+                })
+            api.requestFullOfflineRecordingSettings(deviceId, PolarBleApi.PolarDeviceDataType.HR)
+                .subscribe(
+                    { polarSensorSettings: PolarSensorSetting ->
+                        Log.d(TAG, " settings: ${polarSensorSettings.toString()}")
+                    },
+                    { error: Throwable ->
+                        Log.e(TAG, "requestFullOfflineRecordingSettings. Reason $error")
+                    }
+                )
         }
 
         autoConnectButton.setOnClickListener {
@@ -704,9 +746,9 @@ class MainActivity : AppCompatActivity() {
 
         startRecordingButton.setOnClickListener {
             //Example of starting ACC offline recording
-            Log.d(TAG, "Starts ACC recording")
+            Log.d(TAG, "Starts recording")
             val settings: MutableMap<PolarSensorSetting.SettingType, Int> = mutableMapOf()
-            settings[PolarSensorSetting.SettingType.SAMPLE_RATE] = 52
+            settings[PolarSensorSetting.SettingType.SAMPLE_RATE] = 50
             settings[PolarSensorSetting.SettingType.RESOLUTION] = 16
             settings[PolarSensorSetting.SettingType.RANGE] = 8
             settings[PolarSensorSetting.SettingType.CHANNELS] = 3
@@ -719,21 +761,33 @@ class MainActivity : AppCompatActivity() {
                     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
                 )
             )
-            api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()), yourSecret)
+            //api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()), yourSecret)
                 //Without a secret key
-                //api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()))
+            api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()))
                 .subscribe(
-                    { Log.d(TAG, "start offline recording completed") },
+                    { Log.d(TAG, "start offline hr recording completed") },
                     { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
                 )
+//            api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()))
+//                .subscribe(
+//                    { Log.d(TAG, "start offline acc recording completed") },
+//                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
+//                )
+
+
         }
 
         stopRecordingButton.setOnClickListener {
             //Example of stopping ACC offline recording
-            Log.d(TAG, "Stops ACC recording")
+            Log.d(TAG, "Stops recording")
+//            api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
+//                .subscribe(
+//                    { Log.d(TAG, "stop offline ACC recording completed") },
+//                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
+//                )
             api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
                 .subscribe(
-                    { Log.d(TAG, "stop offline recording completed") },
+                    { Log.d(TAG, "stop offline HR recording completed") },
                     { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
                 )
         }
@@ -755,9 +809,9 @@ class MainActivity : AppCompatActivity() {
                             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
                         )
                     )
-                    api.getOfflineRecord(deviceId, offlineEntry, yourSecret)
+                    //api.getOfflineRecord(deviceId, offlineEntry, yourSecret)
                         //Not using a secret key
-                        //api.getOfflineRecord(deviceId, offlineEntry)
+                        api.getOfflineRecord(deviceId, offlineEntry)
                         .subscribe(
                             {
                                 Log.d(TAG, "Recording ${offlineEntry.path} downloaded. Size: ${offlineEntry.size}")
@@ -765,7 +819,21 @@ class MainActivity : AppCompatActivity() {
                                     is PolarOfflineRecordingData.AccOfflineRecording -> {
                                         Log.d(TAG, "ACC Recording started at ${it.startTime}")
                                         for (sample in it.data.samples) {
-                                            Log.d(TAG, "ACC data: time: ${sample.timeStamp} X: ${sample.x} Y: ${sample.y} Z: ${sample.z}")
+                                            Log.d(TAG, "ACC data: time: ${sample.timeStamp.toString()} X: ${sample.x} Y: ${sample.y} Z: ${sample.z}")
+                                        }
+                                    }
+                                    is PolarOfflineRecordingData.HrOfflineRecording -> {
+                                        Log.d(TAG, "HR Recording started at ${it.startTime}")
+                                        /// Get the HR interval from the recording settings.
+                                        val intervalInMs =
+                                            it.settings!!.settings[PolarSensorSetting.SettingType.SAMPLE_RATE]!!.first() * 1000
+
+                                        /// Get the date of the first sample.
+                                        val firstSampleDateUTC = it.startTime.timeInMillis + intervalInMs
+                                        val index = 0;
+                                        for (sample in it.data.samples) {
+                                            val date = Instant.ofEpochMilli(firstSampleDateUTC + intervalInMs * index)
+                                            Log.d(TAG, "HR data: time: ${date} HR: ${sample.hr}")
                                         }
                                     }
 //                      is PolarOfflineRecordingData.GyroOfflineRecording -> { }

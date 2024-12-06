@@ -48,4 +48,6 @@
     <string name="enable_ppi_mode_led_animation">Enable PPI mode led animation</string>
     <string name="disable_ppi_mode_led_animation">Disable PPI mode led animation</string>
     <string name="do_factory_reset">Do factory reset</string>
+    <string name="offline_settings">Offline settings</string>
+    <string name="restart">restart device</string>
 </resources>
