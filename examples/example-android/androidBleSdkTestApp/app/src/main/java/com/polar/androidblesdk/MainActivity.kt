@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -26,6 +27,9 @@ import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.core.Flowable
 import io.reactivex.rxjava3.core.Single
 import io.reactivex.rxjava3.disposables.Disposable
+import java.io.File
+import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.*
 
@@ -46,7 +50,7 @@ class MainActivity : AppCompatActivity() {
             applicationContext,
             setOf(
                 PolarBleApi.PolarBleSdkFeature.FEATURE_HR,
-                PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
+//              PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE,
                 PolarBleApi.PolarBleSdkFeature.FEATURE_BATTERY_INFO,
                 PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_H10_EXERCISE_RECORDING,
                 PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_OFFLINE_RECORDING,
@@ -765,6 +769,11 @@ class MainActivity : AppCompatActivity() {
                 //Without a secret key
             api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC, PolarSensorSetting(settings.toMap()))
                 .subscribe(
+                    { Log.d(TAG, "start offline acc recording completed") },
+                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
+                )
+            api.startOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.HR)
+                .subscribe(
                     { Log.d(TAG, "start offline hr recording completed") },
                     { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
                 )
@@ -780,12 +789,12 @@ class MainActivity : AppCompatActivity() {
         stopRecordingButton.setOnClickListener {
             //Example of stopping ACC offline recording
             Log.d(TAG, "Stops recording")
-//            api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
-//                .subscribe(
-//                    { Log.d(TAG, "stop offline ACC recording completed") },
-//                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
-//                )
             api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
+                .subscribe(
+                    { Log.d(TAG, "stop offline ACC recording completed") },
+                    { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
+                )
+            api.stopOfflineRecording(deviceId, PolarBleApi.PolarDeviceDataType.HR)
                 .subscribe(
                     { Log.d(TAG, "stop offline HR recording completed") },
                     { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
@@ -798,43 +807,63 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Searching to recording to download... ")
             //Get first entry for testing download
             val offlineRecEntry = entryCache[deviceId]?.firstOrNull()
-            offlineRecEntry?.let { offlineEntry ->
+            api.listOfflineRecordings(deviceId)
+                .observeOn(AndroidSchedulers.mainThread())
+                .map {
+                    it
+                }
+                .subscribe({offlineEntry: PolarOfflineRecordingEntry ->
+
                 try {
-                    //Using a secret key managed by your own.
-                    //  You can use a different key to each start recording calls.
-                    //  When using key at start recording, it is also needed for the recording download, otherwise could not be decrypted
-                    val yourSecret = PolarRecordingSecret(
-                        byteArrayOf(
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-                        )
-                    )
+
                     //api.getOfflineRecord(deviceId, offlineEntry, yourSecret)
                         //Not using a secret key
                         api.getOfflineRecord(deviceId, offlineEntry)
                         .subscribe(
                             {
                                 Log.d(TAG, "Recording ${offlineEntry.path} downloaded. Size: ${offlineEntry.size}")
+                                val fileName = offlineEntry.path.replace("/U/0/","").replace("/R/","-").replace("/","").replace(".REC",".csv")
+                                Log.d(TAG, "Log file in folder ${getSh(Environment.DIRECTORY_DOCUMENTS)},  fileName: ${fileName}")
+                                val timeoffset = 946684800000000000
                                 when (it) {
                                     is PolarOfflineRecordingData.AccOfflineRecording -> {
                                         Log.d(TAG, "ACC Recording started at ${it.startTime}")
-                                        for (sample in it.data.samples) {
-                                            Log.d(TAG, "ACC data: time: ${sample.timeStamp.toString()} X: ${sample.x} Y: ${sample.y} Z: ${sample.z}")
-                                        }
+                                        var index = 0;
+                                        File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName).bufferedWriter()
+                                            .use { out ->
+                                                for (sample in it.data.samples) {
+                                                    val logEntry = "${Instant.ofEpochMilli((sample.timeStamp + timeoffset)/1000000)},${sample.x},${sample.y},${sample.z}"
+                                                    //Log.d(TAG, logEntry)
+                                                    out.write("${logEntry}\n")
+                                                    index++
+                                                }
+                                                Log.i(TAG,"Written ${index} records to ${getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)}/${fileName}")
+                                            }
+
                                     }
                                     is PolarOfflineRecordingData.HrOfflineRecording -> {
                                         Log.d(TAG, "HR Recording started at ${it.startTime}")
                                         /// Get the HR interval from the recording settings.
-                                        val intervalInMs =
-                                            it.settings!!.settings[PolarSensorSetting.SettingType.SAMPLE_RATE]!!.first() * 1000
+                                        var intervalInMs = 1000
+                                        if (it.settings != null && it.settings!!.settings[PolarSensorSetting.SettingType.SAMPLE_RATE] != null) {
+                                            intervalInMs =
+                                                it.settings!!.settings[PolarSensorSetting.SettingType.SAMPLE_RATE]!!.first() * 1000
+                                        }
 
                                         /// Get the date of the first sample.
                                         val firstSampleDateUTC = it.startTime.timeInMillis + intervalInMs
-                                        val index = 0;
-                                        for (sample in it.data.samples) {
-                                            val date = Instant.ofEpochMilli(firstSampleDateUTC + intervalInMs * index)
-                                            Log.d(TAG, "HR data: time: ${date} HR: ${sample.hr}")
-                                        }
+                                        var index = 0;
+                                        File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName).bufferedWriter()
+                                            .use { out ->
+                                                for (sample in it.data.samples) {
+                                                    val date = Instant.ofEpochMilli(firstSampleDateUTC + intervalInMs * index)
+                                                    val logEntry = "${date},${sample.hr}"
+                                                    out.write("${logEntry}\n")
+                                                    index++
+                                                }
+                                                Log.i(TAG,"Written ${index} records to ${getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)}/${fileName}")
+                                            }
+
                                     }
 //                      is PolarOfflineRecordingData.GyroOfflineRecording -> { }
 //                      is PolarOfflineRecordingData.MagOfflineRecording -> { }
@@ -843,13 +872,19 @@ class MainActivity : AppCompatActivity() {
                                         Log.d(TAG, "Recording type is not yet implemented")
                                     }
                                 }
+                                api.removeOfflineRecord(deviceId, offlineEntry).subscribe({
+                                    Log.i(TAG,"Removed ${offlineEntry.path} from device")
+                                },)
                             },
                             { throwable: Throwable -> Log.e(TAG, "" + throwable.toString()) }
                         )
                 } catch (e: Exception) {
                     Log.e(TAG, "Get offline recording fetch failed on entry ...", e)
                 }
-            }
+            },
+                    { error: Throwable -> Log.e(TAG, "Failed to list recordings: $error") },
+                    { Log.d(TAG, "list recordings complete") })
+
         }
 
         deleteRecordingButton.setOnClickListener {
